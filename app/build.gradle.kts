@@ -62,6 +62,10 @@ dependencies {
     // Accompanist Permissions (Camera Permission ke liye)
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
 
+
+    implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("io.coil-kt:coil-compose:2.6.0") // For displaying picked images
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

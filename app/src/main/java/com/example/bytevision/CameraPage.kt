@@ -1,42 +1,43 @@
 package com.example.bytevision
 
+import android.content.ContentValues
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.widget.Toast
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -44,55 +45,228 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import coil.compose.rememberAsyncImagePainter
-import com.example.bytevision.ui.theme.BgGradientCircle1
-import com.example.bytevision.ui.theme.BgGradientCircle2
-import com.example.bytevision.ui.theme.BgGradientEnd
-import com.example.bytevision.ui.theme.BgGradientStart
-import com.example.bytevision.ui.theme.GlassBackground
-import com.example.bytevision.ui.theme.GlassBorder
-import com.example.bytevision.ui.theme.ListenBtnBg
-import com.example.bytevision.ui.theme.ListenBtnBorder
-import com.example.bytevision.ui.theme.ListenBtnText
-import com.example.bytevision.ui.theme.SendBtnGradientEnd
-import com.example.bytevision.ui.theme.SendBtnGradientStart
-import com.example.bytevision.ui.theme.TextMuted
-import com.example.bytevision.ui.theme.TextTitle
+import com.example.bytevision.ui.theme.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
+import java.io.FileOutputStream
+import java.io.OutputStream
+import kotlin.math.atan2
 
-// =========================================================
-// MAIN CAMERA SCREEN (Production Grade)
-// =========================================================
+enum class CameraMode(val title: String) {
+    PHOTO("PHOTO"),
+    PORTRAIT("PORTRAIT"),
+    NIGHT("NIGHT")
+}
+
 @Composable
-fun CameraPage(
-    modifier: Modifier = Modifier
-) {
+fun CameraPage() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var lastPhoto by remember { mutableStateOf<Uri?>(null) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
-    var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
-    var lastCapturedUri by remember { mutableStateOf<Uri?>(null) }
-    var showPhotoDialog by remember { mutableStateOf(false) }
 
-    val previewView = remember { PreviewView(context) }
+    var selectedMode by remember { mutableStateOf(CameraMode.PHOTO) }
+    var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) }
+    var timerSeconds by remember { mutableIntStateOf(0) }
+    var isTimerRunning by remember { mutableStateOf(false) }
+    var countdownValue by remember { mutableIntStateOf(0) }
 
-    // Camera Lifecycle Setup
-    LaunchedEffect(lensFacing) {
+    var showGrid by remember { mutableStateOf(false) }
+    var showLeveler by remember { mutableStateOf(false) }
+
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var deviceTiltAngle by remember { mutableFloatStateOf(0f) }
+
+    val previewView = remember {
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    DisposableEffect(showLeveler) {
+        if (!showLeveler) return@DisposableEffect onDispose {}
+
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    val ax = it.values[0]
+                    val ay = it.values[1]
+                    val angle = Math.toDegrees(atan2(ax.toDouble(), ay.toDouble())).toFloat()
+                    deviceTiltAngle = -angle
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+
+    // MediaStore ke dwara Gallery (Pictures/ByteVision) me photo save karne ka function
+    fun saveBitmapToGallery(bitmap: Bitmap, filename: String): Uri? {
+        val resolver = context.contentResolver
+        val imageCollection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "$filename.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ByteVision")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+
+        val imageUri = resolver.insert(imageCollection, contentValues)
+
+        imageUri?.let { uri ->
+            resolver.openOutputStream(uri)?.use { outputStream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+            }
+        }
+
+        return imageUri
+    }
+
+    fun executeCapture() {
+        val capture = imageCapture ?: return
+
+        capture.takePicture(
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(imageProxy: ImageProxy) {
+                    val buffer = imageProxy.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    imageProxy.close()
+
+                    // Captured bytes to Bitmap
+                    val originalBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+
+                    // Shuffle Pixels
+                    val password = "MySecretPassword"
+                    val shuffledBitmap = shuffleBitmap(originalBitmap, password)
+
+                    // Save directly to Gallery -> Pictures/ByteVision
+                    val filename = "shuffled_${System.currentTimeMillis()}"
+                    val savedUri = saveBitmapToGallery(shuffledBitmap, filename)
+
+                    if (savedUri != null) {
+                        lastPhoto = savedUri
+                        Toast.makeText(context, "Saved to Gallery (Pictures/ByteVision)!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Failed to save image to Gallery", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Toast.makeText(context, "Capture Failed: ${exception.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    fun onShutterClick() {
+        if (isTimerRunning) return
+
+        if (timerSeconds > 0) {
+            isTimerRunning = true
+            countdownValue = timerSeconds
+            coroutineScope.launch {
+                while (countdownValue > 0) {
+                    delay(1000)
+                    countdownValue--
+                }
+                isTimerRunning = false
+                executeCapture()
+            }
+        } else {
+            executeCapture()
+        }
+    }
+
+    fun onFlipCameraClick() {
+        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+            CameraSelector.LENS_FACING_FRONT
+        } else {
+            CameraSelector.LENS_FACING_BACK
+        }
+    }
+
+    fun onFlashToggleClick() {
+        flashMode = when (flashMode) {
+            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON
+            ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO
+            else -> ImageCapture.FLASH_MODE_OFF
+        }
+    }
+
+    fun onTimerToggleClick() {
+        timerSeconds = when (timerSeconds) {
+            0 -> 3
+            3 -> 10
+            else -> 0
+        }
+    }
+
+    fun onGridToggleClick() {
+        showGrid = !showGrid
+    }
+
+    fun onLevelerToggleClick() {
+        showLeveler = !showLeveler
+    }
+
+    fun onModeSelectClick(mode: CameraMode) {
+        selectedMode = mode
+    }
+
+    fun onGalleryThumbnailClick() {
+        lastPhoto?.let {
+            Toast.makeText(context, "Opening last captured photo", Toast.LENGTH_SHORT).show()
+        } ?: run {
+            Toast.makeText(context, "No photo captured yet", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(lensFacing, flashMode) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
 
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            val preview = Preview.Builder().build()
+            preview.setSurfaceProvider(previewView.surfaceProvider)
 
-            imageCapture = ImageCapture.Builder().build()
+            val captureBuilder = ImageCapture.Builder()
+                .setFlashMode(flashMode)
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+
+            imageCapture = captureBuilder.build()
 
             val cameraSelector = CameraSelector.Builder()
                 .requireLensFacing(lensFacing)
@@ -100,7 +274,7 @@ fun CameraPage(
 
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
+                camera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     cameraSelector,
                     preview,
@@ -112,266 +286,231 @@ fun CameraPage(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    fun takePhoto() {
-        val capture = imageCapture ?: return
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color.Black,
+        contentWindowInsets = WindowInsets.statusBars,
+        topBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { onFlashToggleClick() }) {
+                        Text(
+                            text = when (flashMode) {
+                                ImageCapture.FLASH_MODE_ON -> "⚡ ON"
+                                ImageCapture.FLASH_MODE_AUTO -> "⚡ AUTO"
+                                else -> "⚡ OFF"
+                            },
+                            color = Color.White, fontSize = 11.sp
+                        )
+                    }
 
-        val photoFile = File(
-            context.externalCacheDir,
-            SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
-                .format(System.currentTimeMillis()) + ".jpg"
-        )
+                    TextButton(onClick = { onTimerToggleClick() }) {
+                        Text(if (timerSeconds == 0) "⏱ OFF" else "⏱️ ${timerSeconds}s", color = Color.White, fontSize = 11.sp)
+                    }
 
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                    TextButton(onClick = { onGridToggleClick() }) {
+                        Text(if (showGrid) "🌐 GRID" else "🌐 OFF", color = Color.White, fontSize = 11.sp)
+                    }
 
-        capture.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    lastCapturedUri = Uri.fromFile(photoFile)
-                    Toast.makeText(context, "Photo Captured!", Toast.LENGTH_SHORT).show()
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    Toast.makeText(context, "Error: ${exception.message}", Toast.LENGTH_SHORT).show()
+                    TextButton(onClick = { onLevelerToggleClick() }) {
+                        Text(if (showLeveler) "⚖️ SENSOR" else "⚖️ OFF", color = Color.White, fontSize = 11.sp)
+                    }
                 }
             }
-        )
-    }
+        },
+        bottomBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.8f))
+            ) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    items(CameraMode.entries.toTypedArray()) { mode ->
+                        Text(
+                            text = mode.title,
+                            color = if (selectedMode == mode) ActionTextPink else TextMuted,
+                            fontWeight = if (selectedMode == mode) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .clickable { onModeSelectClick(mode) }
+                        )
+                    }
+                }
 
-    val backgroundBrush = Brush.linearGradient(
-        colors = listOf(BgGradientStart, BgGradientEnd)
-    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(ListenBtnBg)
+                            .border(1.dp, ListenBtnBorder, RoundedCornerShape(14.dp))
+                            .clickable { onGalleryThumbnailClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        lastPhoto?.let { uri ->
+                            Image(
+                                painter = rememberAsyncImagePainter(uri),
+                                contentDescription = "Last Capture",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } ?: Text("NONE", fontSize = 9.sp, color = TextMuted)
+                    }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize()
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.linearGradient(
+                                    listOf(SendBtnGradientStart, SendBtnGradientEnd)
+                                )
+                            )
+                            .clickable { onShutterClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                    }
+
+                    Button(
+                        onClick = { onFlipCameraClick() },
+                        colors = ButtonDefaults.buttonColors(containerColor = ListenBtnBg, contentColor = ListenBtnText),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("FLIP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(backgroundBrush)
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
         ) {
-            // Ambient Decorative Elements
-            CameraBackgroundDecorations()
-
-            // Main Preview View Surface
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = 110.dp, top = 16.dp, start = 16.dp, end = 16.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .border(2.dp, GlassBorder, RoundedCornerShape(28.dp))
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            zoomRatio = (zoomRatio * zoom).coerceIn(1f, 5f)
+                            camera?.cameraControl?.setZoomRatio(zoomRatio)
+                        }
+                    }
             ) {
                 AndroidView(
                     factory = { previewView },
                     modifier = Modifier.fillMaxSize()
                 )
-            }
 
-            // Glassmorphic Control Bar
-            CameraControlPanel(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                lastCapturedUri = lastCapturedUri,
-                onThumbnailClick = { showPhotoDialog = true },
-                onShutterClick = { takePhoto() },
-                onFlipClick = {
-                    lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                        CameraSelector.LENS_FACING_FRONT
-                    } else {
-                        CameraSelector.LENS_FACING_BACK
-                    }
-                }
-            )
-
-            // Fullscreen Preview Overlay Modal
-            if (showPhotoDialog && lastCapturedUri != null) {
-                PhotoPreviewDialog(
-                    imageUri = lastCapturedUri!!,
-                    onDismiss = { showPhotoDialog = false }
-                )
-            }
-        }
-    }
-}
-
-// =========================================================
-// HELPER COMPOSABLES
-// =========================================================
-
-@Composable
-private fun CameraBackgroundDecorations() {
-    Box(
-        modifier = Modifier
-            .size(280.dp)
-            .background(BgGradientCircle1, CircleShape)
-    )
-    Box(
-        modifier = Modifier
-            .size(260.dp)
-            .background(BgGradientCircle2, CircleShape)
-    )
-}
-
-@Composable
-private fun CameraControlPanel(
-    modifier: Modifier = Modifier,
-    lastCapturedUri: Uri?,
-    onThumbnailClick: () -> Unit,
-    onShutterClick: () -> Unit,
-    onFlipClick: () -> Unit
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
-            .background(GlassBackground)
-            .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
-            .padding(vertical = 12.dp, horizontal = 24.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left: Gallery Thumbnail Slot
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(ListenBtnBg)
-                    .border(1.5.dp, ListenBtnBorder, CircleShape)
-                    .clickable(enabled = lastCapturedUri != null, onClick = onThumbnailClick),
-                contentAlignment = Alignment.Center
-            ) {
-                if (lastCapturedUri != null) {
-                    Image(
-                        painter = rememberAsyncImagePainter(lastCapturedUri),
-                        contentDescription = "Last captured photo thumbnail",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text(
-                        text = "PIC",
-                        color = TextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            // Center: Gradient Shutter Action
-            Box(
-                modifier = Modifier
-                    .size(70.dp)
-                    .border(3.dp, ListenBtnBorder, CircleShape)
-                    .padding(4.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(SendBtnGradientStart, SendBtnGradientEnd)
-                        )
-                    )
-                    .clickable(onClick = onShutterClick),
-                contentAlignment = Alignment.Center
-            ) {
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.9f))
-                )
-            }
-
-            // Right: Flip Lens Switcher
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(ListenBtnBg)
-                    .border(1.5.dp, ListenBtnBorder, CircleShape)
-                    .clickable(onClick = onFlipClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Flip",
-                    color = ListenBtnText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PhotoPreviewDialog(
-    imageUri: Uri,
-    onDismiss: () -> Unit
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = GlassBackground
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .border(1.5.dp, GlassBorder, RoundedCornerShape(28.dp))
-                    .padding(16.dp)
-            ) {
-                Image(
-                    painter = rememberAsyncImagePainter(imageUri),
-                    contentDescription = "Captured Photo Preview",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(20.dp))
-                        .padding(top = 40.dp)
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val position = event.changes.first().position
+                                    focusPoint = position
+
+                                    val factory = previewView.meteringPointFactory
+                                    val point = factory.createPoint(position.x, position.y)
+                                    val action = FocusMeteringAction.Builder(point).build()
+                                    camera?.cameraControl?.startFocusAndMetering(action)
+                                }
+                            }
+                        }
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Photo Preview",
-                        color = TextTitle,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
+                focusPoint?.let { point ->
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawCircle(
+                            color = Color.Yellow,
+                            radius = 40f,
+                            center = point,
+                            style = Stroke(width = 3f)
+                        )
+                    }
+                }
+
+                if (showGrid) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+
+                        drawLine(Color.White.copy(0.4f), start = Offset(w / 3, 0f), end = Offset(w / 3, h), strokeWidth = 1f)
+                        drawLine(Color.White.copy(0.4f), start = Offset((2 * w) / 3, 0f), end = Offset((2 * w) / 3, h), strokeWidth = 1f)
+                        drawLine(Color.White.copy(0.4f), start = Offset(0f, h / 3), end = Offset(w, h / 3), strokeWidth = 1f)
+                        drawLine(Color.White.copy(0.4f), start = Offset(0f, (2 * h) / 3), end = Offset(w, (2 * h) / 3), strokeWidth = 1f)
+                    }
+                }
+
+                if (showLeveler) {
+                    val isBalanced = kotlin.math.abs(deviceTiltAngle) < 2f
+                    val levelerColor = if (isBalanced) Color.Green else Color.Yellow
 
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(ListenBtnBg)
-                            .border(1.dp, ListenBtnBorder, CircleShape)
-                            .clickable(onClick = onDismiss),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "✕",
-                            color = ListenBtnText,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                            .align(Alignment.Center)
+                            .width(160.dp)
+                            .height(2.dp)
+                            .rotate(deviceTiltAngle)
+                            .background(levelerColor)
+                    )
+                }
+
+                if (isTimerRunning) {
+                    Text(
+                        text = "$countdownValue",
+                        fontSize = 80.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
                 }
             }
+
+            Slider(
+                value = zoomRatio,
+                onValueChange = {
+                    zoomRatio = it
+                    camera?.cameraControl?.setZoomRatio(it)
+                },
+                valueRange = 1f..5f,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth(0.6f)
+            )
         }
     }
 }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,77 +38,149 @@ import com.example.bytevision.ui.theme.GlassBorder
 import com.example.bytevision.ui.theme.TextMuted
 import com.example.bytevision.ui.theme.TextTitle
 
+
 enum class Screen {
     WEBVIEW,
-    CAMERA
+    CAMERA,
+    SHUFFLE
 }
+
 
 @Composable
 fun MainAppContainer() {
-    var currentScreen by remember { mutableStateOf(Screen.WEBVIEW) }
+
+    var currentScreen by remember {
+        mutableStateOf(Screen.WEBVIEW)
+    }
 
     Scaffold(
-        // Top extra space completely remove karne ke liye insets ko 0 dp set kiya hai
         contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+
         bottomBar = {
+
             TextBottomNavigationBar(
                 currentScreen = currentScreen,
-                onScreenSelected = { currentScreen = it }
+
+                onScreenSelected = {
+                    currentScreen = it
+                }
             )
         }
+
     ) { innerPadding ->
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+
             AnimatedContent(
                 targetState = currentScreen,
+
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200))
+
+                    fadeIn(
+                        animationSpec = tween(200)
+                    ) togetherWith fadeOut(
+                        animationSpec = tween(200)
+                    )
                 },
+
                 label = "ScreenSwitch"
+
             ) { targetScreen ->
+
                 when (targetScreen) {
-                    Screen.WEBVIEW -> WebVieew()
-                    Screen.CAMERA -> CameraPage()
+
+                    Screen.WEBVIEW -> {
+                        WebVieew()
+                    }
+
+                    Screen.CAMERA -> {
+                        CameraPage()
+                    }
+
+                    Screen.SHUFFLE -> {
+                        Shuffle()
+                    }
                 }
             }
         }
     }
 }
 
+
 @Composable
 fun TextBottomNavigationBar(
     currentScreen: Screen,
     onScreenSelected: (Screen) -> Unit
 ) {
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(GlassBackground)
-            .border(width = 0.5.dp, color = GlassBorder)
-            .padding(vertical = 12.dp)
+            .border(
+                width = 0.5.dp,
+                color = GlassBorder
+            )
+            .padding(
+                vertical = 12.dp
+            )
     ) {
+
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
+
+            horizontalArrangement =
+                Arrangement.SpaceAround,
+
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
+
+            // WEBVIEW
             TextNavButton(
                 title = "WEBVIEW",
-                isSelected = currentScreen == Screen.WEBVIEW,
-                onClick = { onScreenSelected(Screen.WEBVIEW) }
+
+                isSelected =
+                    currentScreen == Screen.WEBVIEW,
+
+                onClick = {
+                    onScreenSelected(Screen.WEBVIEW)
+                }
             )
 
+
+            // CAMERA
             TextNavButton(
                 title = "CAMERA",
-                isSelected = currentScreen == Screen.CAMERA,
-                onClick = { onScreenSelected(Screen.CAMERA) }
+
+                isSelected =
+                    currentScreen == Screen.CAMERA,
+
+                onClick = {
+                    onScreenSelected(Screen.CAMERA)
+                }
+            )
+
+
+            // SHUFFLE
+            TextNavButton(
+                title = "SHUFFLE",
+
+                isSelected =
+                    currentScreen == Screen.SHUFFLE,
+
+                onClick = {
+                    onScreenSelected(Screen.SHUFFLE)
+                }
             )
         }
     }
 }
+
 
 @Composable
 fun TextNavButton(
@@ -117,23 +188,56 @@ fun TextNavButton(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+
     Box(
         modifier = Modifier
-            .clickable { onClick() }
-            .padding(horizontal = 24.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
+            .clickable {
+                onClick()
+            }
+            .padding(
+                horizontal = 20.dp,
+                vertical = 6.dp
+            ),
+
+        contentAlignment =
+            Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+        Column(
+            horizontalAlignment =
+                Alignment.CenterHorizontally
+        ) {
+
             Text(
                 text = title,
+
                 fontSize = 12.sp,
-                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                color = if (isSelected) TextTitle else TextMuted,
+
+                fontWeight =
+                    if (isSelected) {
+                        FontWeight.ExtraBold
+                    } else {
+                        FontWeight.Medium
+                    },
+
+                color =
+                    if (isSelected) {
+                        TextTitle
+                    } else {
+                        TextMuted
+                    },
+
                 letterSpacing = 1.sp
             )
 
+
+            // Selected indicator
             if (isSelected) {
-                Spacer(modifier = Modifier.height(4.dp))
+
+                androidx.compose.foundation.layout.Spacer(
+                    modifier = Modifier.height(4.dp)
+                )
+
                 Box(
                     modifier = Modifier
                         .size(4.dp)

@@ -42,7 +42,8 @@ import com.example.bytevision.ui.theme.TextTitle
 enum class Screen {
     WEBVIEW,
     CAMERA,
-    SHUFFLE
+    SHUFFLE,
+    IMAGE_MESSAGE
 }
 
 
@@ -103,6 +104,10 @@ fun MainAppContainer() {
 
                     Screen.SHUFFLE -> {
                         Shuffle()
+                    }
+
+                    Screen.IMAGE_MESSAGE -> {
+                        ImageMessage()
                     }
                 }
             }
@@ -177,6 +182,19 @@ fun TextBottomNavigationBar(
                     onScreenSelected(Screen.SHUFFLE)
                 }
             )
+
+
+            // IMAGE MESSAGE
+            TextNavButton(
+                title = "MESSAGE",
+
+                isSelected =
+                    currentScreen == Screen.IMAGE_MESSAGE,
+
+                onClick = {
+                    onScreenSelected(Screen.IMAGE_MESSAGE)
+                }
+            )
         }
     }
 }
@@ -195,7 +213,7 @@ fun TextNavButton(
                 onClick()
             }
             .padding(
-                horizontal = 20.dp,
+                horizontal = 12.dp,
                 vertical = 6.dp
             ),
 
@@ -211,7 +229,7 @@ fun TextNavButton(
             Text(
                 text = title,
 
-                fontSize = 12.sp,
+                fontSize = 11.sp,
 
                 fontWeight =
                     if (isSelected) {
@@ -227,7 +245,7 @@ fun TextNavButton(
                         TextMuted
                     },
 
-                letterSpacing = 1.sp
+                letterSpacing = 0.5.sp
             )
 
 

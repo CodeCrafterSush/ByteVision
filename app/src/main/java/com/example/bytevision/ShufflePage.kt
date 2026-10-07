@@ -404,7 +404,8 @@ fun Shuffle() {
 
     Scaffold(
         containerColor = Color.Transparent
-    ) { innerPadding ->
+    )
+    { innerPadding ->
 
         Box(
             modifier = Modifier
@@ -1004,10 +1005,11 @@ fun Shuffle() {
             }
         }
     }
+
 }
 
 @Composable
-private fun SectionLabel(
+fun SectionLabel(
     text: String
 ) {
     Text(
@@ -1020,7 +1022,7 @@ private fun SectionLabel(
 }
 
 @Composable
-private fun PasswordField(
+fun PasswordField(
     value: String,
     placeholder: String,
     onValueChange: (String) -> Unit
@@ -1107,7 +1109,7 @@ private fun PasswordField(
 }
 
 @Composable
-private fun GradientButton(
+fun GradientButton(
     text: String,
     iconResId: Int,
     onClick: () -> Unit
@@ -1162,7 +1164,7 @@ private fun GradientButton(
 }
 
 @Composable
-private fun SecondaryButton(
+fun SecondaryButton(
     text: String,
     iconResId: Int,
     onClick: () -> Unit

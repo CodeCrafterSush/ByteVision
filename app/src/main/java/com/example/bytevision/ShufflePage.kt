@@ -969,7 +969,7 @@ fun Shuffle() {
                                         // Gallery / Placeholder Icon
                                         Icon(
                                             painter = painterResource(
-                                                id = R.drawable.icon_file
+                                                id = R.drawable.image
                                             ),
                                             contentDescription = "Output Placeholder",
                                             tint = SendBtnGradientStart,
@@ -1081,9 +1081,9 @@ fun PasswordField(
                     painter = painterResource(
                         id =
                             if (isPasswordVisible)
-                                R.drawable.icon_lock
+                                R.drawable.icon_show
                             else
-                                R.drawable.icon_lock
+                                R.drawable.icon_hide
                     ),
                     contentDescription =
                         if (isPasswordVisible)

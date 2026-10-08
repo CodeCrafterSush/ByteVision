@@ -169,7 +169,7 @@ fun ImageMessage() {
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Image Steganography",
+                                text = "Secret Pixels",
                                 fontSize = 28.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextTitle
@@ -186,7 +186,6 @@ fun ImageMessage() {
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // 1. INPUT IMAGE BOX
                         SectionLabel(text = "IMAGE INPUT")
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -638,9 +637,6 @@ fun ImageMessage() {
     }
 }
 
-// ==========================================
-// TOAST & GALLERY HELPER UTILS
-// ==========================================
 
 private fun showToast(context: Context, message: String) {
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()

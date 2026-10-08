@@ -147,7 +147,7 @@ fun TextBottomNavigationBar(
 
             // WEBVIEW
             TextNavButton(
-                title = "WEBVIEW",
+                title = "AUDIO",
 
                 isSelected =
                     currentScreen == Screen.WEBVIEW,
